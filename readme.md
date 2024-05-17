@@ -6,9 +6,9 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
 
 ## Requisitos
 
-- Python 3.7 o superior
+- Python 3.9 o superior
 - `PyQt5` para la interfaz gráfica
-- `whisper` de OpenAI para la transcripción
+- `openai-whisper` de OpenAI para la transcripción
 - `python-docx` para la manipulación de archivos Word
 - `ffmpeg` para la manipulación de archivos multimedia
 
@@ -17,8 +17,8 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
 1. **Clonar el repositorio**
 
     ```sh
-    git clone https://github.com/tuusuario/nombre_del_repositorio.git
-    cd nombre_del_repositorio
+    git clone https://github.com/angellabco/transcripciones_zacatecas
+    cd transcripciones_zacatecas
     ```
 
 2. **Crear y activar un entorno virtual**
@@ -34,19 +34,15 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
     pip install -r requirements.txt
     ```
 
-    Asegúrate de que `requirements.txt` contenga las siguientes líneas:
-
-    ```plaintext
-    PyQt5
-    openai-whisper
-    python-docx
-    ```
-
 4. **Instalar `ffmpeg`**
 
     - **En Windows**:
         - Descarga `ffmpeg` desde [FFmpeg Releases](https://ffmpeg.org/download.html).
         - Extrae los archivos y agrega la carpeta `bin` de `ffmpeg` al `PATH` del sistema.
+        # Usando Chocolatey (https://chocolatey.org/)
+        choco install ffmpeg
+        # Usando Scoop (https://scoop.sh/)
+        scoop install ffmpeg
 
     - **En macOS**:
         ```sh
@@ -64,10 +60,10 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
 1. **Ejecutar la aplicación**
 
     ```sh
-    python main.py
+    python gui_app.py
     ```
 
-    Asegúrate de que el archivo principal se llama `main.py`.
+    Asegúrate de que el archivo principal se llama `gui_app.py`.
 
 2. **Interfaz de usuario**
 
@@ -78,18 +74,8 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
 
 ## Notas
 
-- Asegúrate de tener una conexión a Internet activa cuando utilices el modelo Whisper, ya que puede requerir acceso a recursos en línea.
+- Asegúrate de tener una conexión a Internet activa cuando utilices por primera vez el modelo Whisper, ya que requerirá acceso a internet.
 - El rendimiento de la transcripción puede variar según la longitud y calidad de los archivos de audio.
-
-## Contribuciones
-
-Las contribuciones son bienvenidas. Por favor, sigue los pasos a continuación para contribuir:
-
-1. **Fork** el repositorio.
-2. **Crea** una rama para tu característica (`git checkout -b feature/nueva-caracteristica`).
-3. **Commit** tus cambios (`git commit -am 'Agrega nueva característica'`).
-4. **Push** a la rama (`git push origin feature/nueva-caracteristica`).
-5. **Abre** un Pull Request.
 
 ## Licencia
 
