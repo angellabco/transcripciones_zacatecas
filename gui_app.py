@@ -283,7 +283,7 @@ class AudioTranscriptionApp(QMainWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)  # Crear aplicación PyQt
-        ex = AudioTrnscriptionApp()  # Crear instancia de la aplicación de transcripción
+        ex = AudioTranscriptionApp()  # Crear instancia de la aplicación de transcripción
         ex.show()  # Mostrar la interfaz de usuario
         sys.exit(app.exec_())  # Ejecutar el bucle de eventos de la aplicación
     except Exception as e:
