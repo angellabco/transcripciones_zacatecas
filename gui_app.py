@@ -1,64 +1,68 @@
 import sys
+import os
 import asyncio
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QTextEdit, QFileDialog, QVBoxLayout, QWidget, QProgressBar, QHBoxLayout
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject, QEventLoop
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QTextEdit, QFileDialog, QVBoxLayout, QWidget, QProgressBar, QHBoxLayout, QSlider, QProgressDialog
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
+from moviepy.editor import VideoFileClip
+from pydub import AudioSegment
 import whisper
 from docx import Document
 
-# Definición de una clase para las señales de transcripción
-class TranscriptionSignals(QObject):
-    transcription_complete = pyqtSignal(str, int)  # Señal que se emite cuando una transcripción se completa
+def ms_to_time(ms):
+    seconds = ms // 1000
+    minutes = seconds // 60
+    hours = minutes // 60
+    return f"{hours:02}:{minutes % 60:02}:{seconds % 60:02}"
 
-# Clase que representa la tarea de transcripción
-class TranscriptionTask(QObject):
-    def __init__(self, model, audio_path, index, signals):
+def ms_to_time_string(ms):
+    seconds = ms // 1000
+    minutes = seconds // 60
+    hours = minutes // 60
+    return f"{hours}h{minutes % 60}m{seconds % 60}s"
+
+class TranscriptionWorker(QThread):
+    transcription_complete = pyqtSignal(str)
+
+    def __init__(self, model, audio_path):
         super().__init__()
-        self.model = model  # El modelo de transcripción Whisper
-        self.audio_path = audio_path  # Ruta del archivo de audio a transcribir
-        self.index = index  # Índice de la tarea
-        self.signals = signals  # Señales para comunicar resultados
+        self.model = model
+        self.audio_path = audio_path
 
-    async def transcribe_audio(self):
-        try:
-            result = self.model.transcribe(self.audio_path)  # Realizar la transcripción usando el modelo Whisper
-            transcription = result["text"]  # Obtener el texto de la transcripción
-            self.signals.transcription_complete.emit(transcription, self.index)  # Emitir señal indicando que la transcripción se completó
-        except Exception as e:
-            print(f"Error in transcription task {self.index}: {e}")
+    def run(self):
+        result = self.model.transcribe(self.audio_path)
+        transcription = result["text"]
+        self.transcription_complete.emit(transcription)
 
-# Clase principal de la aplicación de transcripción de audio
-class AudioTranscriptionApp(QMainWindow):
+class AudioExtractor(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.initUI()  # Inicializar la interfaz de usuario
-        self.signals = TranscriptionSignals()  # Crear señales de transcripción
-        self.signals.transcription_complete.connect(self.on_transcription_complete)  # Conectar la señal a un slot
-        self.model = whisper.load_model("medium")  # Cargar el modelo Whisper
-        self.audio_paths = []  # Lista para almacenar las rutas de los archivos de audio
-        self.transcriptions = []  # Lista para almacenar las transcripciones
-        self.progress_bars = []  # Lista para almacenar las barras de progreso
-        self.transcription_areas = []  # Lista para almacenar las áreas de texto de las transcripciones
-        self.download_buttons = []  # Lista para almacenar los botones de descarga
-        self.tasks = []  # Lista para almacenar las tareas de transcripción
-        self.completed_tasks = 0  # Contador de tareas completadas
+        self.initUI()
+        self.model = whisper.load_model("medium")
+        self.audio_path = ''
+        self.cut_audio_path = ''
+        self.loading_dialog = None
+        self.worker = None
 
-    # Configuración inicial de la interfaz de usuario
     def initUI(self):
-        self.setWindowTitle('Herramienta de transcripción')  # Título de la ventana
-        self.setGeometry(100, 100, 1200, 900)  # Dimensiones de la ventana
+        self.setWindowTitle('Herramienta de transcripción')
+        self.setGeometry(100, 100, 1200, 900)
 
         # Configurar el icono de la ventana
-        self.setWindowIcon(QIcon("C:/Users/AngelSerrano/Downloads/aplicacion_tribunal/logo_nuevo.png"))
+        icon_path = os.path.expanduser('~/logo_nuevo.png')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Logo not found at {icon_path}")
 
         # Configurar el color de fondo
         palette = self.palette()
         palette.setColor(QPalette.Window, QColor("#FAF9F6"))
         self.setPalette(palette)
 
-        self.central_widget = QWidget()  # Widget central
+        self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QVBoxLayout(self.central_widget)  # Layout vertical principal
+        self.layout = QVBoxLayout(self.central_widget)
 
         # Layout para el logo
         self.logo_layout = QHBoxLayout()
@@ -66,12 +70,15 @@ class AudioTranscriptionApp(QMainWindow):
 
         # Configuración del logo
         self.logo_label = QLabel(self)
-        pixmap = QPixmap("C:/Users/AngelSerrano/Downloads/aplicacion_tribunal/logo_nuevo.png")
-        self.logo_label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio))
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            self.logo_label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio))
+        else:
+            self.logo_label.setText("Logo no encontrado")
         self.logo_layout.addWidget(self.logo_label, alignment=Qt.AlignLeft)
 
         # Etiqueta de instrucción
-        self.label = QLabel('Carga tus archivos de audio', self)
+        self.label = QLabel('Carga tu archivo de video o audio', self)
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setFont(QFont('Helvetica', 14, QFont.Bold))
         self.layout.addWidget(self.label)
@@ -89,202 +96,231 @@ class AudioTranscriptionApp(QMainWindow):
         }
         """
 
-        # Botón para subir archivos
-        self.upload_button = QPushButton('Subir Archivos', self)
-        self.upload_button.setFont(QFont('Helvetica', 12))
-        self.upload_button.setStyleSheet(button_style)
-        self.upload_button.clicked.connect(self.upload_files)
-        self.layout.addWidget(self.upload_button)
+        # Layout para los botones de carga de video y audio
+        self.upload_layout = QHBoxLayout()
+        self.layout.addLayout(self.upload_layout)
 
-        # Etiqueta para mostrar la cantidad de archivos cargados
+        # Botón para subir archivos de video
+        self.upload_video_button = QPushButton('Subir Video', self)
+        self.upload_video_button.setFont(QFont('Helvetica', 12))
+        self.upload_video_button.setStyleSheet(button_style)
+        self.upload_video_button.clicked.connect(self.load_video)
+        self.upload_layout.addWidget(self.upload_video_button)
+
+        # Botón para subir archivos de audio
+        self.upload_audio_button = QPushButton('Subir Audio', self)
+        self.upload_audio_button.setFont(QFont('Helvetica', 12))
+        self.upload_audio_button.setStyleSheet(button_style)
+        self.upload_audio_button.clicked.connect(self.load_audio)
+        self.upload_layout.addWidget(self.upload_audio_button)
+
+        # Botón para extraer audio del video
+        self.extract_button = QPushButton('Extraer Audio del Video', self)
+        self.extract_button.setFont(QFont('Helvetica', 12))
+        self.extract_button.setStyleSheet(button_style)
+        self.extract_button.clicked.connect(self.extract_audio)
+        self.layout.addWidget(self.extract_button)
+        self.extract_button.setEnabled(False)
+
+        # Etiqueta para mostrar la ruta del archivo cargado
         self.file_label = QLabel('', self)
         self.file_label.setFont(QFont('Helvetica', 12))
         self.layout.addWidget(self.file_label)
 
-        # Botón para iniciar la transcripción
-        self.transcribe_button = QPushButton('Comenzar Transcripción', self)
+        self.slider_layout = QVBoxLayout()
+
+        self.start_slider_layout = QHBoxLayout()
+        self.start_slider_label = QLabel('Inicio: 00:00:00')
+        self.start_slider = QSlider(Qt.Horizontal)
+        self.start_slider.setRange(0, 100)
+        self.start_slider.setValue(0)
+        self.start_slider.setTickInterval(1)
+        self.start_slider.setTickPosition(QSlider.TicksBelow)
+        self.start_slider.valueChanged.connect(self.update_start_label)
+        self.start_slider_layout.addWidget(QLabel("Inicio"))
+        self.start_slider_layout.addWidget(self.start_slider)
+        self.start_slider_layout.addWidget(self.start_slider_label)
+
+        self.end_slider_layout = QHBoxLayout()
+        self.end_slider_label = QLabel('Fin: 00:00:00')
+        self.end_slider = QSlider(Qt.Horizontal)
+        self.end_slider.setRange(0, 100)
+        self.end_slider.setValue(100)
+        self.end_slider.setTickInterval(1)
+        self.end_slider.setTickPosition(QSlider.TicksBelow)
+        self.end_slider.valueChanged.connect(self.update_end_label)
+        self.end_slider_layout.addWidget(QLabel("Fin"))
+        self.end_slider_layout.addWidget(self.end_slider)
+        self.end_slider_layout.addWidget(self.end_slider_label)
+
+        self.layout.addLayout(self.start_slider_layout)
+        self.layout.addLayout(self.end_slider_layout)
+
+        self.cut_button = QPushButton('Cortar Audio')
+        self.cut_button.setFont(QFont('Helvetica', 12))
+        self.cut_button.setStyleSheet(button_style)
+        self.cut_button.clicked.connect(self.cut_audio)
+        self.layout.addWidget(self.cut_button)
+        self.cut_button.setEnabled(False)
+
+        self.transcribe_button = QPushButton('Transcribir Audio')
         self.transcribe_button.setFont(QFont('Helvetica', 12))
         self.transcribe_button.setStyleSheet(button_style)
         self.transcribe_button.clicked.connect(self.start_transcription)
-        self.transcribe_button.setEnabled(False)  # Deshabilitado inicialmente
         self.layout.addWidget(self.transcribe_button)
+        self.transcribe_button.setEnabled(False)
 
-        # Barra de progreso general
-        self.overall_progress_bar = QProgressBar(self)
-        self.overall_progress_bar.setRange(0, 100)
-        self.layout.addWidget(self.overall_progress_bar)
+        self.transcription_area = QTextEdit(self)
+        self.transcription_area.setFont(QFont('Helvetica', 12))
+        self.transcription_area.setReadOnly(True)
+        self.transcription_area.setStyleSheet("border: 1px solid #6e6e6e; border-radius: 10px; padding: 10px 16px;")
+        self.layout.addWidget(self.transcription_area)
 
-        # Botón para limpiar la interfaz
+        self.download_button = QPushButton('Descargar Transcripción', self)
+        self.download_button.setFont(QFont('Helvetica', 12))
+        self.download_button.setStyleSheet(button_style)
+        self.download_button.setEnabled(False)
+        self.download_button.clicked.connect(self.download_transcription)
+        self.layout.addWidget(self.download_button)
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.layout.addWidget(self.progress_bar)
+
         self.clear_button = QPushButton('Limpiar', self)
-        self.clear_button.setFont(QFont('Helvetica', 14))
+        self.clear_button.setFont(QFont('Helvetica', 12))
         self.clear_button.setStyleSheet(button_style)
         self.clear_button.clicked.connect(self.clear_all)
         self.layout.addWidget(self.clear_button)
 
-    # Crear widgets para cada transcripción individual
-    def create_transcription_widgets(self, index):
-        # Barra de progreso individual
-        progress_bar = QProgressBar(self)
-        self.layout.addWidget(progress_bar)
-        self.progress_bars.append(progress_bar)
+        self.video_path = ''
+        self.audio_path = ''
+        self.cut_audio_path = ''
+        self.audio_duration = 0
 
-        # Área de texto para mostrar la transcripción
-        transcription_area = QTextEdit(self)
-        transcription_area.setFont(QFont('Helvetica', 12))
-        transcription_area.setReadOnly(True)
-        transcription_area.setStyleSheet("border: 1px solid #6e6e6e; border-radius: 10px; padding: 10px 16px;")
-        self.layout.addWidget(transcription_area)
-        self.transcription_areas.append(transcription_area)
+    def load_video(self):
+        self.video_path, _ = QFileDialog.getOpenFileName(self, 'Abrir Archivo de Video', '', 'Archivos de Video (*.mp4)')
+        if self.video_path:
+            self.label.setText(f'Video cargado: {self.video_path}')
+            self.extract_button.setEnabled(True)
+            self.cut_button.setEnabled(False)
+            self.transcribe_button.setEnabled(False)
 
-        # Botón para descargar la transcripción
-        download_button = QPushButton(f'Descargar Transcripción {index + 1}', self)
-        download_button.setFont(QFont('Helvetica', 12))
-        download_button.setStyleSheet("""
-        QPushButton {
-            background-color: #d3d3d3; 
-            border: none; 
-            border-radius: 10px; 
-            padding: 10px 16px;
-        }
-        QPushButton:pressed {
-            background-color: #c0c0c0;
-        }
-        """)
-        download_button.clicked.connect(self.get_download_function(index))
-        download_button.setEnabled(False)  # Deshabilitado hasta que la transcripción esté lista
-        self.layout.addWidget(download_button)
-        self.download_buttons.append(download_button)
+    def load_audio(self):
+        self.audio_path, _ = QFileDialog.getOpenFileName(self, 'Abrir Archivo de Audio', '', 'Archivos de Audio (*.wav *.mp3 *.m4a)')
+        if self.audio_path:
+            self.label.setText(f'Audio cargado: {self.audio_path}')
+            self.extract_button.setEnabled(False)
+            self.cut_button.setEnabled(True)
+            self.transcribe_button.setEnabled(True)
+            self.audio_duration = int(AudioSegment.from_file(self.audio_path).duration_seconds * 1000)
+            self.start_slider.setRange(0, self.audio_duration)
+            self.end_slider.setRange(0, self.audio_duration)
+            self.start_slider.setValue(0)
+            self.end_slider.setValue(self.audio_duration)
+            self.update_start_label(0)
+            self.update_end_label(self.audio_duration)
 
-    # Función para obtener la función de descarga correspondiente a un índice
-    def get_download_function(self, index):
-        def download():
-            try:
-                self.download_transcription(index)
-            except Exception as e:
-                print(f"Error in download function {index}: {e}")
-        return download
+    def extract_audio(self):
+        if self.video_path:
+            video = VideoFileClip(self.video_path)
+            audio = video.audio
+            self.audio_path = self.video_path.replace('.mp4', '.wav')
+            audio.write_audiofile(self.audio_path)
+            self.label.setText(f'Audio extraído a: {self.audio_path}')
 
-    # Subir archivos de audio
-    def upload_files(self):
-        try:
-            options = QFileDialog.Options()
-            file_names, _ = QFileDialog.getOpenFileNames(self, "Sube archivos de audio", "", "Audio Files (*.mp3 *.wav *.m4a)", options=options)
-            if file_names:
-                self.audio_paths = file_names  # Guardar rutas de archivos
-                self.file_label.setText(f'{len(file_names)} archivos cargados')  # Mostrar cantidad de archivos cargados
-                self.transcribe_button.setEnabled(True)  # Habilitar botón de transcripción
+            self.audio_duration = int(audio.duration * 1000)
+            self.start_slider.setRange(0, self.audio_duration)
+            self.end_slider.setRange(0, self.audio_duration)
+            self.start_slider.setValue(0)
+            self.end_slider.setValue(self.audio_duration)
+            self.update_start_label(0)
+            self.update_end_label(self.audio_duration)
+            self.cut_button.setEnabled(True)
+            self.transcribe_button.setEnabled(True)
 
-                # Limpiar widgets previos
-                for progress_bar in self.progress_bars:
-                    self.layout.removeWidget(progress_bar)
-                    progress_bar.deleteLater()
-                self.progress_bars.clear()
+    def update_start_label(self, value):
+        self.start_slider_label.setText(f'Inicio: {ms_to_time(value)}')
 
-                for transcription_area in self.transcription_areas:
-                    self.layout.removeWidget(transcription_area)
-                    transcription_area.deleteLater()
-                self.transcription_areas.clear()
+    def update_end_label(self, value):
+        self.end_slider_label.setText(f'Fin: {ms_to_time(value)}')
 
-                for download_button in self.download_buttons:
-                    self.layout.removeWidget(download_button)
-                    download_button.deleteLater()
-                self.download_buttons.clear()
+    def cut_audio(self):
+        if self.audio_path:
+            audio = AudioSegment.from_file(self.audio_path)
 
-                self.transcriptions = [None] * len(file_names)  # Inicializar lista de transcripciones
+            start_time = self.start_slider.value()
+            end_time = self.end_slider.value()
 
-                # Crear nuevos widgets para cada archivo
-                for i in range(len(file_names)):
-                    self.create_transcription_widgets(i)
-        except Exception as e:
-            print(f"Error in upload_files: {e}")
+            if start_time < end_time:
+                cut_audio = audio[start_time:end_time]
+                start_time_str = ms_to_time_string(start_time)
+                end_time_str = ms_to_time_string(end_time)
+                self.cut_audio_path = self.audio_path.replace('.wav', f'_corte_{start_time_str}_a_{end_time_str}.wav')
+                cut_audio.export(self.cut_audio_path, format="wav")
+                self.label.setText(f'Audio cortado y guardado en: {self.cut_audio_path}')
+                self.transcribe_button.setEnabled(True)
+            else:
+                self.label.setText('El tiempo de fin debe ser mayor que el tiempo de inicio')
 
-    # Iniciar transcripción de los archivos subidos
     def start_transcription(self):
-        self.tasks = []  # Lista de tareas de transcripción
-        self.completed_tasks = 0  # Reiniciar contador de tareas completadas
-        loop = asyncio.new_event_loop()  # Crear un nuevo bucle de eventos
-        asyncio.set_event_loop(loop)
-        self.transcribe_button.setEnabled(False)  # Deshabilitar botón de transcripción mientras se ejecuta
-        self.transcribe_button.setText("Transcripción en curso...")
+        if self.cut_audio_path:
+            audio_to_transcribe = self.cut_audio_path
+        else:
+            audio_to_transcribe = self.audio_path
 
-        # Crear y agregar tareas de transcripción
-        for i, audio_path in enumerate(self.audio_paths):
-            self.progress_bars[i].setVisible(True)
-            self.progress_bars[i].setRange(0, 0)  # Barra de progreso indeterminada
-            task = TranscriptionTask(self.model, audio_path, i, self.signals)
-            self.tasks.append(task.transcribe_audio())
-        
-        # Ejecutar las tareas de transcripción
-        loop.run_until_complete(asyncio.gather(*self.tasks))
-        loop.close()
-        self.transcribe_button.setEnabled(True)  # Rehabilitar botón de transcripción
-        self.transcribe_button.setText("Comenzar Transcripción")
+        self.loading_dialog = QProgressDialog("Transcribiendo audio...", None, 0, 0, self)
+        self.loading_dialog.setWindowTitle("Por favor, espera")
+        self.loading_dialog.setWindowModality(Qt.ApplicationModal)
+        self.loading_dialog.setMinimumDuration(0)
+        self.loading_dialog.show()
 
-    # Slot para manejar la señal de transcripción completa
-    def on_transcription_complete(self, transcription, index):
-        try:
-            self.transcriptions[index] = transcription  # Guardar transcripción
-            self.transcription_areas[index].setPlainText(transcription)  # Mostrar transcripción
-            self.download_buttons[index].setEnabled(True)  # Habilitar botón de descarga
-            self.progress_bars[index].setVisible(False)  # Ocultar barra de progreso
+        self.worker = TranscriptionWorker(self.model, audio_to_transcribe)
+        self.worker.transcription_complete.connect(self.on_transcription_complete)
+        self.worker.start()
 
-            self.completed_tasks += 1  # Incrementar contador de tareas completadas
-            total_tasks = len(self.audio_paths)
-            progress_percentage = int((self.completed_tasks / total_tasks) * 100)  # Calcular progreso general
-            self.overall_progress_bar.setValue(progress_percentage)  # Actualizar barra de progreso general
+    def on_transcription_complete(self, transcription):
+        self.transcription = transcription
+        self.transcription_area.setPlainText(transcription)
+        self.download_button.setEnabled(True)
+        self.progress_bar.setValue(100)
+        self.transcribe_button.setText("Transcribir Audio")
+        self.transcribe_button.setEnabled(True)
+        if self.loading_dialog:
+            self.loading_dialog.close()
 
-            if self.completed_tasks == total_tasks:
-                self.label.setText("Todas las transcripciones completadas")  # Mensaje cuando todas las transcripciones estén completas
-        except Exception as e:
-            print(f"Error in on_transcription_complete {index}: {e}")
+    def download_transcription(self):
+        if self.transcription:
+            options = QFileDialog.Options()
+            file_name, _ = QFileDialog.getSaveFileName(self, "Guardar Transcripción", "transcripcion.docx", "Archivos Word (*.docx)", options=options)
+            if file_name:
+                doc = Document()
+                doc.add_paragraph(self.transcription)
+                doc.save(file_name)
 
-    # Descargar transcripción
-    def download_transcription(self, index):
-        try:
-            if self.transcriptions[index]:
-                options = QFileDialog.Options()
-                file_name, _ = QFileDialog.getSaveFileName(self, f"Guardar Transcripción {index + 1}", f"transcription_{index + 1}.docx", "Word Files (*.docx)", options=options)
-                if file_name:
-                    doc = Document()
-                    doc.add_paragraph(self.transcriptions[index])  # Agregar transcripción al documento
-                    doc.save(file_name)  # Guardar documento
-        except Exception as e:
-            print(f"Error in download_transcription {index}: {e}")
-
-    # Limpiar todos los datos y widgets
     def clear_all(self):
-        self.audio_paths = []  # Limpiar lista de rutas de archivos de audio
-        self.transcriptions = []  # Limpiar lista de transcripciones
-        self.file_label.setText('')  # Limpiar etiqueta de archivos cargados
-        self.transcribe_button.setEnabled(False)  # Deshabilitar botón de transcripción
+        self.video_path = ''
+        self.audio_path = ''
+        self.cut_audio_path = ''
+        self.transcription = ''
+        self.label.setText('Carga tu archivo de video o audio')
+        self.file_label.setText('')
+        self.transcription_area.clear()
+        self.download_button.setEnabled(False)
+        self.transcribe_button.setEnabled(False)
+        self.cut_button.setEnabled(False)
+        self.extract_button.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.start_slider.setValue(0)
+        self.end_slider.setValue(100)
+        self.update_start_label(0)
+        self.update_end_label(0)
 
-        # Eliminar barras de progreso
-        for progress_bar in self.progress_bars:
-            self.layout.removeWidget(progress_bar)
-            progress_bar.deleteLater()
-        self.progress_bars.clear()
-
-        # Eliminar áreas de transcripción
-        for transcription_area in self.transcription_areas:
-            self.layout.removeWidget(transcription_area)
-            transcription_area.deleteLater()
-        self.transcription_areas.clear()
-
-        # Eliminar botones de descarga
-        for download_button in self.download_buttons:
-            self.layout.removeWidget(download_button)
-            download_button.deleteLater()
-        self.download_buttons.clear()
-
-        self.overall_progress_bar.setValue(0)  # Reiniciar barra de progreso general
-        self.label.setText('Carga tus archivos de audio')  # Restablecer etiqueta de instrucción
-
-# Código principal para ejecutar la aplicación
 if __name__ == '__main__':
     try:
-        app = QApplication(sys.argv)  # Crear aplicación PyQt
-        ex = AudioTrnscriptionApp()  # Crear instancia de la aplicación de transcripción
-        ex.show()  # Mostrar la interfaz de usuario
-        sys.exit(app.exec_())  # Ejecutar el bucle de eventos de la aplicación
+        app = QApplication(sys.argv)
+        extractor = AudioExtractor()
+        extractor.show()
+        sys.exit(app.exec_())
     except Exception as e:
         print(f"An error occurred: {e}")
