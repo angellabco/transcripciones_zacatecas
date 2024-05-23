@@ -10,6 +10,8 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
 - `PyQt5` para la interfaz gráfica
 - `openai-whisper` de OpenAI para la transcripción
 - `python-docx` para la manipulación de archivos Word
+- `pydub` para el procesamiento de audio
+- `moviepy` para la manipulación de archivos de video
 - `ffmpeg` para la manipulación de archivos multimedia
 
 ## Instalación
@@ -39,10 +41,14 @@ Esta es una aplicación de escritorio desarrollada en Python que permite transcr
     - **En Windows**:
         - Descarga `ffmpeg` desde [FFmpeg Releases](https://ffmpeg.org/download.html).
         - Extrae los archivos y agrega la carpeta `bin` de `ffmpeg` al `PATH` del sistema.
-        # Usando Chocolatey (https://chocolatey.org/)
-        choco install ffmpeg
-        # Usando Scoop (https://scoop.sh/)
-        scoop install ffmpeg
+        - Usando Chocolatey (https://chocolatey.org/):
+          ```sh
+          choco install ffmpeg
+          ```
+        - Usando Scoop (https://scoop.sh/):
+          ```sh
+          scoop install ffmpeg
+          ```
 
     - **En macOS**:
         ```sh

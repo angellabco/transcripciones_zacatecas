@@ -2,3 +2,5 @@ PyQt5
 openai-whisper
 python-docx
 ffmpeg-python
+pydub
+moviepy
