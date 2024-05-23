@@ -49,7 +49,8 @@ class AudioExtractor(QMainWindow):
         self.setGeometry(100, 100, 1200, 900)
 
         # Configurar el icono de la ventana
-        icon_path = os.path.expanduser('~/logo_nuevo.png')
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(script_dir, 'logo_nuevo.png')
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
@@ -318,9 +319,9 @@ class AudioExtractor(QMainWindow):
 
 if __name__ == '__main__':
     try:
-        app = QApplication(sys.argv)  # Crear aplicación PyQt
-        ex = AudioTrnscriptionApp()  # Crear instancia de la aplicación de transcripción
-        ex.show()  # Mostrar la interfaz de usuario
-        sys.exit(app.exec_())  # Ejecutar el bucle de eventos de la aplicación
+        app = QApplication(sys.argv)
+        extractor = AudioExtractor()
+        extractor.show()
+        sys.exit(app.exec_())
     except Exception as e:
         print(f"An error occurred: {e}")
