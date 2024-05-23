@@ -318,9 +318,9 @@ class AudioExtractor(QMainWindow):
 
 if __name__ == '__main__':
     try:
-        app = QApplication(sys.argv)
-        extractor = AudioExtractor()
-        extractor.show()
-        sys.exit(app.exec_())
+        app = QApplication(sys.argv)  # Crear aplicación PyQt
+        ex = AudioTrnscriptionApp()  # Crear instancia de la aplicación de transcripción
+        ex.show()  # Mostrar la interfaz de usuario
+        sys.exit(app.exec_())  # Ejecutar el bucle de eventos de la aplicación
     except Exception as e:
         print(f"An error occurred: {e}")
