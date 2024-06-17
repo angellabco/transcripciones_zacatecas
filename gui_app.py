@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QTex
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject
 from PyQt5.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
 from moviepy.editor import VideoFileClip
-from pydub import AudioSegment
+from pydub import AudioSegment, effects
 import whisper
 from docx import Document
 
@@ -227,7 +227,7 @@ class AudioExtractor(QMainWindow):
             video = VideoFileClip(self.video_path)
             audio = video.audio
             self.audio_path = self.video_path.replace('.mp4', '.wav')
-            audio.write_audiofile(self.audio_path)
+            audio.write_audiofile(self.audio_path, codec='pcm_s16le')  # Exportar con codec PCM para mejor calidad
             self.label.setText(f'Audio extraído a: {self.audio_path}')
 
             self.audio_duration = int(audio.duration * 1000)
@@ -255,6 +255,7 @@ class AudioExtractor(QMainWindow):
 
             if start_time < end_time:
                 cut_audio = audio[start_time:end_time]
+                cut_audio = effects.normalize(cut_audio)  # Normalizar el audio
                 start_time_str = ms_to_time_string(start_time)
                 end_time_str = ms_to_time_string(end_time)
                 self.cut_audio_path = self.audio_path.replace('.wav', f'_corte_{start_time_str}_a_{end_time_str}.wav')
